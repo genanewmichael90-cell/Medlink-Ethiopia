@@ -1,0 +1,187 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {uid}
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required, email format)
+    //   - displayName: string (optional)
+    //   - photoURL: string (optional, uri format)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: appointments
+    // Document ID: {appointmentId}
+    // Fields:
+    //   - patientUid: string (required)
+    //   - patientName: string (required)
+    //   - patientAge: map (required)
+    //   - specialty: string (required)
+    //   - doctorId: string (optional)
+    //   - doctorName: string (optional)
+    //   - hospitalId: string (optional)
+    //   - hospitalName: string (required)
+    //   - date: string (required)
+    //   - time: string (required)
+    //   - status: string (required, enum: pending, confirmed, cancelled, completed)
+    //   - message: string (optional)
+    //   - type: string (required, enum: consult, booking)
+    //   - notes: string (optional)
+    //   - createdAt: string (required)
+    //
+    // Collection: prescriptions
+    // Document ID: {prescriptionId}
+    // Fields:
+    //   - patientUid: string (required)
+    //   - doctorId: string (required)
+    //   - doctorName: string (required)
+    //   - medication: string (required)
+    //   - dosage: string (required)
+    //   - instructions: string (required)
+    //   - date: timestamp (required)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: labResults
+    // Document ID: {resultId}
+    // Fields:
+    //   - patientUid: string (required)
+    //   - centerId: string (required)
+    //   - centerName: string (required)
+    //   - testName: string (required)
+    //   - result: string (required)
+    //   - date: timestamp (required)
+    //   - status: string (required, enum: pending, final)
+    //   - createdAt: timestamp (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && 
+             resource != null && 
+             'patientUid' in resource.data && 
+             request.auth.uid == resource.data.patientUid;
+    }
+
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid;
+    }
+
+    function patientUidUnchanged() {
+      return !('patientUid' in request.resource.data) || request.resource.data.patientUid == request.auth.uid;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (request.auth.token.email == "genanewmichael90@gmail.com" || 
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'photoURL', 'createdAt', 'role']) &&
+             data.uid is string && data.uid.size() > 0 &&
+             isValidEmail(data.email) &&
+             (!('displayName' in data) || data.displayName == null || (data.displayName is string && data.displayName.size() < 100)) &&
+             (!('photoURL' in data) || data.photoURL == null || (data.photoURL is string && data.photoURL.size() < 500)) &&
+             data.role in ['client', 'doctor', 'admin'];
+    }
+
+    function isValidAppointment(data) {
+      let allowedFields = ['patientUid', 'patientName', 'patientAge', 'specialty', 'doctorId', 'doctorName', 'hospitalId', 'hospitalName', 'date', 'time', 'status', 'message', 'type', 'notes', 'createdAt'];
+      return hasOnlyAllowedFields(allowedFields) &&
+             data.patientUid is string && data.patientUid == request.auth.uid &&
+             data.patientName is string && data.patientName.size() > 0 &&
+             data.patientAge is map &&
+             data.specialty is string &&
+             (!('doctorId' in data) || data.doctorId == null || data.doctorId is string) &&
+             (!('doctorName' in data) || data.doctorName is string) &&
+             (!('hospitalId' in data) || data.hospitalId == null || data.hospitalId is string) &&
+             data.hospitalName is string &&
+             data.date is string &&
+             data.time is string &&
+             data.status in ['pending', 'confirmed', 'cancelled', 'completed'] &&
+             (!('message' in data) || data.message is string) &&
+             data.type in ['consult', 'booking'] &&
+             (!('notes' in data) || data.notes is string) &&
+             data.createdAt is string;
+    }
+
+    function isValidPrescription(data) {
+      return hasOnlyAllowedFields(['patientUid', 'doctorId', 'doctorName', 'medication', 'dosage', 'instructions', 'date', 'createdAt']) &&
+             data.patientUid is string && data.patientUid == request.auth.uid &&
+             data.medication is string && data.medication.size() < 200 &&
+             data.date is timestamp;
+    }
+
+    function isValidLabResult(data) {
+      return hasOnlyAllowedFields(['patientUid', 'centerId', 'centerName', 'testName', 'result', 'date', 'status', 'createdAt']) &&
+             data.patientUid is string && data.patientUid == request.auth.uid &&
+             data.testName is string && data.testName.size() < 200 &&
+             data.status in ['pending', 'final'];
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow create: if isOwner(uid) && isValidUser(request.resource.data);
+      allow update: if isOwner(uid) && isValidUser(request.resource.data) && (request.resource.data.role == resource.data.role || isAdmin());
+    }
+
+    match /appointments/{appointmentId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isAuthenticated() && isValidAppointment(request.resource.data);
+      allow update: if (isDocOwner() || isAdmin()) && isValidAppointment(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /prescriptions/{prescriptionId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isAdmin(); // Only admins/doctors can create prescriptions in a real app
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /labResults/{resultId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isAdmin(); // Only labs can create results
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Default deny
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}

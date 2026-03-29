@@ -1,0 +1,5 @@
+{
+  "name": "MedLink Ethiopia",
+  "description": "Premium health-tech platform for Ethiopia. Search hospitals, doctors, and book appointments online with ease.",
+  "requestFramePermissions": ["geolocation", "camera"]
+}
