@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { auth } from '../firebase';
 import { HOSPITALS } from '../constants';
 import { ChevronRight, Search, MapPin, Phone, X, AlertCircle, Stethoscope, ShieldCheck, Heart, Building2, Code, Calendar, Activity, Award, Clock, User, Bell } from 'lucide-react';
@@ -12,6 +12,7 @@ const Home = () => {
   const [user, setUser] = useState(auth.currentUser);
   const [selectedItem, setSelectedItem] = useState<{ type: 'notification' | 'partnerForm' | 'healthTips', data?: any } | null>(null);
   const [partnerFormStatus, setPartnerFormStatus] = useState<'idle' | 'submitting' | 'success'>('idle');
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   const dailyTipIndex = (new Date().getDate() % 7) + 1;
   const healthTips = [1, 2, 3, 4, 5, 6, 7];
@@ -30,6 +31,14 @@ const Home = () => {
     return unsubscribe;
   }, []);
 
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.play().catch(error => {
+        console.log("Autoplay prevented:", error);
+      });
+    }
+  }, []);
+
   return (
     <div className="dark:bg-slate-900 transition-colors duration-300">
       {/* Hero Section */}
@@ -37,11 +46,14 @@ const Home = () => {
         {/* Background Video */}
         <div className="absolute inset-0 z-0">
           <video
+            ref={videoRef}
             autoPlay
             loop
             muted
             playsInline
-            className="w-full h-full object-cover"
+            disablePictureInPicture
+            disableRemotePlayback
+            className="w-full h-full object-cover pointer-events-none"
           >
             <source src="https://image2url.com/r2/default/videos/1774774092971-de5b6aff-0991-4ccc-b48f-cca5b3541ba1.mp4" type="video/mp4" />
           </video>
